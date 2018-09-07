@@ -1,86 +1,32 @@
 
-DROP TABLE policy_kyd.tmp_zym_big;
-CREATE TABLE policy_kyd.tmp_zym_big AS
+
 SELECT *,get_json_object(inputparam,'$.user_id')AS user_id,get_json_object(outputparam,'$.customer_cluster_result') AS customer_cluster_result,
 get_json_object(outputparam,'$.customer_cluster_result_code') AS customer_cluster_result_code,get_json_object(inputparam,'$.customer_cluster_type') AS customer_cluster_type
 ,get_json_object(outputparam,'$.auth_status') AS auth_status
 ,get_json_object(inputparam,'$.bank_auth_status') AS bank_auth_status
 ,get_json_object(inputparam,'$.gjj_auth_status') AS gjj_auth_status
 ,get_json_object(inputparam,'$.user_flag1') AS user_flag1
-FROM es_rule.biz_rule_engine_result 
-WHERE   producttype='Customer_cluster_judge' AND  yr=2018 AND tasktime>='20180422000000';
 
 
-DROP TABLE policy_kyd.tmp_zym_big_new;
-CREATE TABLE policy_kyd.tmp_zym_big_new AS
+CREATE TABLE policy AS
 WITH td AS
  (SELECT mn,dt,tasktime,user_id,user_flag1,customer_cluster_result,customer_cluster_result_code,customer_cluster_type,auth_status,
- row_number() over (PARTITION BY user_id,SUBSTRING(tasktime,1,8) ORDER BY tasktime DESC ) AS r1 FROM policy_kyd.tmp_zym_big) 
+ row_number() over (PARTITION BY user_id,SUBSTRING(tasktime,1,8) ORDER BY tasktime DESC ) AS r1 FROM policy_kyd) 
  SELECT * FROM td WHERE td.r1=1 AND td.user_flag1=1  AND (td.auth_status=1 or td.bank_auth_status=1 OR td.gjj_auth_status=1)
 
   
-
-  
-
-DROP TABLE policy_kyd.tmp_zym_big_new_1;
-CREATE TABLE policy_kyd.tmp_zym_big_new_1 AS
 SELECT a.*,CONCAT(SUBSTRING(tasktime,1,4),'-',SUBSTRING(tasktime,5,2),'-',SUBSTRING(tasktime,7,2),' ',SUBSTRING(tasktime,9,2),':',SUBSTRING(tasktime,11,2),':',SUBSTRING(tasktime,13,2)) AS task_time
-FROM policy_kyd.tmp_zym_big_new a
-WHERE customer_cluster_result=1;
+FROM policy_kyd;
 
 
- DROP TABLE policy_kyd.tmp_zym_big_amount;
- CREATE TABLE policy_kyd.tmp_zym_big_amount AS 
+ CREATE TABLE amount AS 
 WITH td AS
  ( SELECT a.user_id,a.task_time,a.customer_cluster_type,b.amount,b.TYPE,ADDDATE,DATEDIFF(b.ADDDATE,a.task_time) AS DAY
- FROM  policy_kyd.tmp_zym_big_new_1  a
- LEFT JOIN limit_mobp2p.`yyd_rca_calc_amount` b
+ FROM  policy_kyd  a
+ LEFT JOIN limit b
  ON  a.user_id =b.user_id 
  WHERE  b.ADDDATE>'2018-04-21' AND b.TYPE=2 AND b.user_type=1)
  SELECT * FROM td WHERE DAY>=0 AND DAY<=30;
  
-
-
- DROP TABLE policy_kyd.tmp_zym_big_amount_1;
-CREATE TABLE policy_kyd.tmp_zym_big_amount_1 AS
-WITH td AS
- (SELECT *,row_number() over (PARTITION BY user_id,to_date(ADDDATE) ORDER BY ADDDATE DESC,DAY ASC) AS r1 FROM policy_kyd.tmp_zym_big_amount) 
- SELECT * FROM td WHERE td.r1=1;
- 
-
- DROP TABLE policy_kyd.tmp_zym_big_amount_2;
- CREATE TABLE policy_kyd.tmp_zym_big_amount_2 AS
-WITH td AS
- (SELECT *,row_number() over (PARTITION BY user_id,to_date(task_time) ORDER BY task_time DESC,DAY ASC) AS r2 FROM policy_kyd.tmp_zym_big_amount_1) 
- SELECT * FROM td WHERE td.r2=1;
-
-
-
- DROP TABLE policy_kyd.tmp_zym_big_borrow;
- CREATE TABLE policy_kyd.tmp_zym_big_borrow AS 
-WITH td AS
- ( SELECT a.user_id,a.task_time,a.customer_cluster_type,a.amount,a.adddate,b.add_time,b.account,b.borrow_nid,b.STATUS,b.borrow_period,b.borrow_type,b.verify_type,
- repay_capital,repay_time,repay_yestime,late_days,repay_status,DATEDIFF(b.add_time,a.ADDDATE) AS DAY
- FROM  policy_kyd.tmp_zym_big_amount_2  a
- LEFT JOIN jujube_dw.t_adl_borrow_sjd b
- ON  a.user_id =b.user_id 
-WHERE b.add_time>'2018-04-21' AND b.borrow_type=8 AND b.is_new=1)
- SELECT * FROM td WHERE DAY>=0 AND DAY<=30;
- 
-
-DROP TABLE policy_kyd.tmp_zym_big_borrow_1;
-CREATE TABLE policy_kyd.tmp_zym_big_borrow_1 AS
-WITH td AS
- (SELECT *,row_number() over (PARTITION BY user_id,to_date(add_time) ORDER BY DAY ASC) AS r1 FROM policy_kyd.tmp_zym_big_borrow) 
- SELECT * FROM td WHERE td.r1=1;
-
-
-
- DROP TABLE policy_kyd.tmp_zym_big_repay;
-CREATE TABLE policy_kyd.tmp_zym_big_repay AS 
-SELECT a.user_id,a.borrow_nid,a.borrow_period,a.account,a.add_time,a.STATUS,a.repay_capital,a.repay_time,a.repay_yestime,a.late_days,a.repay_status,
-b.task_time,b.customer_cluster_type
-FROM  jujube_dw.t_adl_repay_sjd  a,policy_kyd.tmp_zym_big_borrow_1 b
-WHERE a.borrow_nid=b.borrow_Nid;
 
  
